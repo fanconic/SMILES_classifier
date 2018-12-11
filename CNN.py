@@ -123,43 +123,95 @@ def next_batch(n, X, y):
 
 # Convolutional Neural Network Model Method
 def CNN_model(X):
+        ''' Convolutional Neural Network Model Method
+
+        Parameters
+        -----------
+        X: placeholder, will be fed with featues
+
+        Return
+        ----------
+        out: tensor, output layer of the convolutional neural network
+        '''
 
         ''' ------------Network Calculation-------------'''
         # Reshaping vector
-        X_train = tf.reshape(X, shape=[-1, n_rows, n_cols, 1])
+        X_train = tf.reshape(X, shape=[-1, n_rows, n_cols, 1], name= 'Input')
+        tf.summary.image('input', X_train, 3)
 
-        # First Convolutional Layer with Max Pooling
-        conv0 = tf.layers.conv2d(X_train, 16, 5, activation= tf.nn.relu)
-        pool0 = tf.layers.max_pooling2d(conv0, 2, 2)
+        # First Convolutional Layer
+        conv1 = tf.layers.conv2d(X_train, filters =16,
+                                        kernel_size= 3,
+                                        activation= tf.nn.relu,
+                                        padding='SAME',
+                                        name='conv1',
+                                        kernel_initializer= tf.truncated_normal_initializer(),
+                                        bias_initializer= tf.constant_initializer(0.1))
 
-        # First Convolutional Layer with Max Pooling
-        conv1 = tf.layers.conv2d(pool0, 32, 4, activation= tf.nn.relu)
-        pool1 = tf.layers.max_pooling2d(conv1, 2, 2)
+        # First Max Pooling
+        pool1 = tf.layers.max_pooling2d(conv1, 3, 3, name='MaxPool_3x3')
 
-        # Second Convolutional Layer with Max Pooling
-        conv2 = tf.layers.conv2d(pool1, 64, 3, activation= tf.nn.relu)
-        pool2 = tf.layers.max_pooling2d(conv2, 2, 2)
+        # First Convolutional Layer
+        conv2 = tf.layers.conv2d(pool1, filters =32,
+                                        kernel_size= 3,
+                                        activation= tf.nn.relu,
+                                        padding='SAME',
+                                        name='conv2',
+                                        kernel_initializer= tf.truncated_normal_initializer(),
+                                        bias_initializer= tf.constant_initializer(0.1))
+
+        # Second Max Pooling
+        pool2 = tf.layers.max_pooling2d(conv2, 2, 2, name='MaxPool_2x2')
+
+        # Second Convolutional Layer
+        conv3 = tf.layers.conv2d(pool2, filters =64,
+                                        kernel_size= 3,
+                                        activation= tf.nn.relu,
+                                        padding='SAME',
+                                        name='conv3',
+                                        kernel_initializer= tf.truncated_normal_initializer(),
+                                        bias_initializer= tf.constant_initializer(0.1))
 
         # Flatten
-        flat = tf.contrib.layers.flatten(pool2)
+        flat = tf.contrib.layers.flatten(conv3)
         
-        # Fourth Layer Fully Connected
-        local1 = tf.layers.dense(flat, 128, activation= tf.nn.leaky_relu)
-        local1 = tf.layers.dropout(local1, rate= (1-keep_prob))
+        # First Layer Fully Connected
+        local1 = tf.layers.dense(flat, 128,
+                                activation= tf.nn.leaky_relu,
+                                name='fc_1',
+                                kernel_initializer= tf.truncated_normal_initializer(),
+                                bias_initializer= tf.constant_initializer(0.1))
 
-        local2 = tf.layers.dense(local1, 256, activation= tf.nn.leaky_relu)
-        local2 = tf.layers.dropout(local2, rate= (1-keep_prob))
+        # First Dropout
+        local1 = tf.layers.dropout(local1, rate= (1-keep_prob), name='dropout_1')
+
+        # Second Layer Fully Connected
+        local2 = tf.layers.dense(local1, 256,
+                                activation= tf.nn.leaky_relu,
+                                name= 'fc_2', kernel_initializer= tf.truncated_normal_initializer(),
+                                bias_initializer= tf.constant_initializer(0.1))
+
+        # Second Dropout
+        local2 = tf.layers.dropout(local2, rate= (1-keep_prob), name= 'dropout_2')
+
+        # Third Fully Connected Layer
+        local3 = tf.layers.dense(local2, 512,
+                                activation= tf.nn.leaky_relu,
+                                name= 'fc_3', kernel_initializer= tf.truncated_normal_initializer(),
+                                bias_initializer= tf.constant_initializer(0.1))
+
+        # Third Dropout
+        local3 = tf.layers.dropout(local3, rate= (1-keep_prob), name= 'dropout_3')
 
         # Readout Layer, fully connected
-        out = tf.layers.dense(local2, n_classes)
+        out = tf.layers.dense(local3, n_classes, name= 'Output')
 
         return out
 
 
+
 # Method to train Neural Network Model
 def train_CNN(X, epochs, lr):
-        # Write to Log file
-        file = open('./models/trash/log.txt','w') 
 
         pred = CNN_model(X)
         pred_classes = tf.argmax(pred, axis=1)
@@ -173,11 +225,17 @@ def train_CNN(X, epochs, lr):
         '''
 
         # Error function and Optimizer
-        error = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits= pred, labels= y))
-        optimizer = tf.train.AdamOptimizer(lr).minimize(error)
+        with tf.name_scope('Error'):
+                error = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits= pred, labels= y))
+        tf.summary.scalar('cross_entropy', error)
+
+        with tf.name_scope('Optimizer'):        
+                optimizer = tf.train.AdamOptimizer(lr).minimize(error)
 
         # Tensorflow Session
         with tf.Session() as sess:
+                merged = tf.summary.merge_all()
+                writer = tf.summary.FileWriter('./Visualization', sess.graph)
                 sess.run(tf.global_variables_initializer())
 
                 for epoch in range(epochs):
@@ -196,6 +254,8 @@ def train_CNN(X, epochs, lr):
                                 _, cost = sess.run([optimizer, error], feed_dict= {X: X_batch, y: y_batch, keep_prob: 0.6})
                                 epoch_loss += cost
 
+                        s = sess.run(merged, feed_dict={X: X_val, y: y_val, keep_prob: 1})
+                        writer.add_summary(s, epoch+1)
                         print('Training:\nEpoch', epoch+1, 'completed out of', n_epochs, 'loss:', epoch_loss)
                         
                         y_true= sess.run(labels,feed_dict={X: X_val, y: y_val, keep_prob: 1}) 
@@ -220,7 +280,8 @@ def train_CNN(X, epochs, lr):
                 #file.write(testing_string)
 
                 saver = tf.train.Saver()
-                saver.save(sess, './models/trash/dnn', global_step = 1)
+                saver.save(sess, './models/dnn', global_step = 1)
+                writer.close()
 
 # Train Neural Network
 train_CNN(X, n_epochs, lr)
